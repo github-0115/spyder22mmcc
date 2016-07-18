@@ -15,14 +15,12 @@ import urllib2
 import re
 from bs4 import BeautifulSoup
 import threading
-import threadpool
 import datetime
 
 """
-以清凉美女为例子：
-1. 开始，获取目录页的url
+多线程处理每页数据
 """
-TIMEOUT = 20
+TIMEOUT = 30
 REFERER = ['http://22mm.xiuna.com/mm/qingliang/']
 HEADERS = {
     'Host': '22mm.xiuna.com',
@@ -40,6 +38,8 @@ page_count = 0  # 总目录页数量
 indexError = []
 suiteError = []
 imgError = []
+
+myPool = []
 
 
 def step_1(cate_index):
@@ -70,6 +70,9 @@ def step_1(cate_index):
             index_urls.append(url + 'index_' + str(i) + '.html')
     for index_url in index_urls:
         t = threading.Thread(target=step_2, args=(index_url, headers))
+        global myPool
+        myPool.append(t)
+        t.start()
 
 
 def step_2(index_url, headers):
@@ -199,30 +202,28 @@ def step_5(headers):
     # img_count = 0
     print u'检查index_url'
     while indexError:
+        print u'index错误数量', len(indexError)
         TIMEOUT += 3
         for index_url in indexError[:]:
             indexError.remove(index_url)
             step_2(index_url, headers)
-        print len(indexError)
     TIMEOUT = 50
     print u'结束index_url'
+
     print u'检查suite_url'
     global suiteError
     while suiteError:
-        pool_2 = threadpool.ThreadPool(len(suiteError))
-        func_var = [(None, {'suite_url': suite_url, 'headers': headers}) for suite_url in suiteError]
-        requests = threadpool.makeRequests(step_3, func_var)
-        [pool_2.putRequest(req) for req in requests]
-        suiteError = []
-        pool_2.wait()
-        print(len(suiteError))
+        print u'suite错误数量', len(suiteError)
+        for suite_url in suiteError:
+            step_3(suite_url, headers)
     print u'结束suite_url'
+
     print u'检查img_url'
     while len(imgError) > 6:
+        print u'img错误数量', len(imgError)
         for img_url in imgError[:]:
             imgError.remove(img_url)
             step_4(img_url)
-        print(len(imgError))
     print u'结束img_url'
 
 
@@ -230,6 +231,9 @@ def workflow(cate_index):
     start_time = datetime.datetime.now()
     print u'开始时间', start_time
     step_1(cate_index)
+    global myPool
+    for t in myPool:
+        t.join()
     HEADERS['Referer'] = REFERER[cate_index]
     step_5(HEADERS)
     end_time = datetime.datetime.now()
