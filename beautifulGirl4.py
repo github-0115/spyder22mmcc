@@ -15,7 +15,7 @@ import urllib2
 import re
 from bs4 import BeautifulSoup
 import threading
-from multiprocessing import Process, Pool
+from multiprocessing import Pool
 import datetime
 
 """
@@ -29,9 +29,10 @@ HEADERS = {
     'Referer': 'http://22mm.xiuna.com/mm/qingliang/',
 }
 
-TIMEOUT = 30
-TIME_PLUS = 10
-TRY_TIMES = 0
+TIMEOUT = 30  # 网页抓取超时
+TIME_PLUS = 10  # 错误处理时尝试增加超时限制的步幅
+TRY_TIMES = 0  # 已经尝试处理错误的次数
+TRY_COUNT = 3  # 最多尝试多少次错误处理
 
 suite_count_total = 0  # 总共多少套
 img_count = 0  # 下载了多少张图片
@@ -40,11 +41,11 @@ suite_count_down = 0  # 当前已解析套图首页个数
 index_count = 0  # 已解析目录页的数量
 page_count = 0  # 总目录页数量
 
-indexError = []
-suiteError = []
-imgError = []
+indexError = []  # 错误目录页缓存池
+suiteError = []  # 错误套图页缓存池
+imgError = []  # 错误图片链接缓存池
 
-myPool = []
+myPool = []  # 线程池，每一个目录页的任务占一个线程
 
 
 def step_1(cate_index):
@@ -82,7 +83,7 @@ def step_1(cate_index):
 
 def step_2(index_url, headers, cate_index):
     """
-    根据指定目录页的url，获取该页内所有套图的主页url，得到一些suite_url
+    根据指定目录页的url，获取该页内所有套图的主页suite_url
     :param index_url: 一个目录页的url
     :param headers:
     :param cate_index:分类索引编号
@@ -116,7 +117,7 @@ def step_2(index_url, headers, cate_index):
 
 def step_3(suite_url, headers, cate_index):
     """
-    根据指定套图主页的url,获取套图内所有图片的url，得到部分img_url
+    根据指定套图主页的url,获取套图内所有图片的img_url
     :param suite_url: 套图主页url
     :param headers:
     :param cate_index:分类索引编号
@@ -215,6 +216,7 @@ def step_5(headers, cate_index):
     global TIMEOUT
     global TIME_PLUS
     global TRY_TIMES
+    global TRY_COUNT
     TIMEOUT += TIME_PLUS
     TRY_TIMES += 1
 
@@ -235,11 +237,16 @@ def step_5(headers, cate_index):
     for img_url in imgError[:]:
         imgError.remove(img_url)
         step_4(img_url, cate_index)
-    if TRY_TIMES > 3 and (indexError or suiteError or imgError):  # 尝试3次错误处理
+    if TRY_TIMES > TRY_COUNT and (indexError or suiteError or imgError):  # 尝试3次错误处理
         step_5(headers, cate_index)
 
 
 def worker(cate_index):
+    """
+    执行指定分类的爬去任务
+    :param cate_index: 分类索引编号
+    :return:
+    """
     start_time = datetime.datetime.now()
     print u'开始时间', start_time
     step_1(cate_index)
