@@ -15,18 +15,23 @@ import urllib2
 import re
 from bs4 import BeautifulSoup
 import threading
+from multiprocessing import Process, Pool
 import datetime
 
 """
-多线程处理每页数据
+多进程处理分类，多线程处理分页
 """
-TIMEOUT = 30
-REFERER = ['http://22mm.xiuna.com/mm/qingliang/']
+REFERER = ['http://22mm.xiuna.com/mm/%s/' % x for x in ['qingliang', 'jingyan', 'bagua', 'suren']]  # 分类主页
+CATE_NAME = [u'清凉美女', u'惊艳美女', u'美女八卦', u'素人美女']  # 分类名称
 HEADERS = {
     'Host': '22mm.xiuna.com',
     'User-Agent': 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:47.0) Gecko/20100101 Firefox/47.0',
     'Referer': 'http://22mm.xiuna.com/mm/qingliang/',
 }
+
+TIMEOUT = 30
+TIME_PLUS = 10
+TRY_TIMES = 0
 
 suite_count_total = 0  # 总共多少套
 img_count = 0  # 下载了多少张图片
@@ -45,7 +50,7 @@ myPool = []
 def step_1(cate_index):
     """
     根据类别索引获取目录页的url,得到index_urls
-    :param cate_index: 类别索引
+    :param cate_index: 分类索引编号
     :return:
     """
     headers = HEADERS.copy()
@@ -69,17 +74,18 @@ def step_1(cate_index):
         else:
             index_urls.append(url + 'index_' + str(i) + '.html')
     for index_url in index_urls:
-        t = threading.Thread(target=step_2, args=(index_url, headers))
+        t = threading.Thread(target=step_2, args=(index_url, headers, cate_index))
         global myPool
         myPool.append(t)
         t.start()
 
 
-def step_2(index_url, headers):
+def step_2(index_url, headers, cate_index):
     """
     根据指定目录页的url，获取该页内所有套图的主页url，得到一些suite_url
     :param index_url: 一个目录页的url
     :param headers:
+    :param cate_index:分类索引编号
     :return:
     """
     request = urllib2.Request(index_url, headers=headers)
@@ -89,7 +95,7 @@ def step_2(index_url, headers):
         if index_url not in indexError:
             indexError.append(index_url)
             print '--indexError   ', index_url
-        print e.message
+            print ('message', e.message)
     else:
         html = response.read()
         soup = BeautifulSoup(html, "html.parser")
@@ -105,14 +111,15 @@ def step_2(index_url, headers):
         global index_count
         index_count += 1
         for suite_url in suite_urls:
-            step_3(suite_url, headers)
+            step_3(suite_url, headers, cate_index)
 
 
-def step_3(suite_url, headers):
+def step_3(suite_url, headers, cate_index):
     """
     根据指定套图主页的url,获取套图内所有图片的url，得到部分img_url
     :param suite_url: 套图主页url
     :param headers:
+    :param cate_index:分类索引编号
     :return:
     """
     request = urllib2.Request(headers['Referer'] + suite_url, headers=headers)
@@ -122,15 +129,14 @@ def step_3(suite_url, headers):
         if suite_url not in suiteError:
             suiteError.append(suite_url)
             print '--suite_urls   ', suite_url
-        print e.message, ('code', e.code) if hasattr(e, 'code') else None
+            print 'suite_first', ('message', e.message), ('code', e.code if hasattr(e, 'code') else '')
     else:
         html = response.read()
         soup = BeautifulSoup(html, "html.parser")
         try:
             count = int(soup.find('span', 'fColor').nextSibling.split('/')[-1])  # 本套共多少图片
         except Exception, e:
-            print suite_url
-            print e.message
+            print e.message, suite_url
         else:
             if count != 1:
                 request2 = urllib2.Request(headers['Referer'] + suite_url.split('.')[0] + '-' + str(count) + '.html',
@@ -141,7 +147,7 @@ def step_3(suite_url, headers):
                     if suite_url not in suiteError:
                         suiteError.append(suite_url)
                         print '--suite_urls   ', suite_url
-                    print e.message, ('code', e.code) if hasattr(e, 'code') else None
+                        print 'suite_end', ('message', e.message), ('code', e.code if hasattr(e, 'code') else '')
                     return
                 else:
                     html = response2.read()
@@ -149,11 +155,13 @@ def step_3(suite_url, headers):
             try:
                 urls = soup.find('div', id='imgString').findNext('script').text
                 title = soup.find('dd', 'rtitle').findChild('strong').text
-                if not os.path.exists('../img/%s' % title):
-                    os.makedirs('../img/%s' % title)
+                global CATE_NAME
+                if not os.path.exists('../img/%s/%s' % (CATE_NAME[cate_index], title)):
+                    os.makedirs('../img/%s/%s' % (CATE_NAME[cate_index], title))
             except Exception, e:
-                print suite_url
-                print e.message
+                suiteError.append(suite_url)
+                print '--suite_urls   ', suite_url
+                print 'suite_end', ('message', e.message)
             else:
                 img_urls = []
                 urls = urls.split(';')
@@ -163,13 +171,14 @@ def step_3(suite_url, headers):
                 global suite_count_down
                 suite_count_down += 1
                 for img_url in img_urls:
-                    step_4(img_url)
+                    step_4(img_url, cate_index)
 
 
-def step_4(img_url):
+def step_4(img_url, cate_index):
     """
     根据图片的url，下载图片
     :param img_url: 图片url
+    :param cate_index:分类索引编号
     :return:
     """
     url = img_url['url']
@@ -179,14 +188,15 @@ def step_4(img_url):
     url = parts.geturl()
     exists = '--'
     try:
-        if not os.path.exists('../img/' + title + '/' + url.split('/')[-1]):
-            urllib.urlretrieve(url, '../img/' + title + '/' + url.split('/')[-1])
+        global CATE_NAME
+        if not os.path.exists('../img/' + CATE_NAME[cate_index] + '/' + title + '/' + url.split('/')[-1]):
+            urllib.urlretrieve(url, '../img/' + CATE_NAME[cate_index] + '/' + title + '/' + url.split('/')[-1])
             exists = "++"
     except Exception, e:
         if img_url not in imgError:
             imgError.append(img_url)
             print '--img_urls   ', img_url['url'], img_url['title']
-        print e.message
+            print ('message', e.message)
     else:
         global img_count
         img_count += 1
@@ -194,40 +204,42 @@ def step_4(img_url):
             print exists, img_count
 
 
-def step_5(headers):
+def step_5(headers, cate_index):
+    """
+    检查并重新尝试出错的url
+    :param headers:
+    :param cate_index:分类索引编号
+    :return:
+    """
     print u'检查模式'
     global TIMEOUT
-    TIMEOUT = 50
-    # global img_count
-    # img_count = 0
-    print u'检查index_url'
-    while indexError:
-        print u'index错误数量', len(indexError)
-        TIMEOUT += 3
-        for index_url in indexError[:]:
-            indexError.remove(index_url)
-            step_2(index_url, headers)
-    TIMEOUT = 50
-    print u'结束index_url'
+    global TIME_PLUS
+    global TRY_TIMES
+    TIMEOUT += TIME_PLUS
+    TRY_TIMES += 1
 
-    print u'检查suite_url'
+    global indexError
+    print u'index错误数量', len(indexError)
+    for index_url in indexError[:]:
+        indexError.remove(index_url)
+        step_2(index_url, headers, cate_index)
+
     global suiteError
-    while suiteError:
-        print u'suite错误数量', len(suiteError)
-        for suite_url in suiteError:
-            step_3(suite_url, headers)
-    print u'结束suite_url'
+    print u'suite错误数量', len(suiteError)
+    for suite_url in suiteError[:]:
+        suiteError.remove(suite_url)
+        step_3(suite_url, headers, cate_index)
 
-    print u'检查img_url'
-    while len(imgError) > 6:
-        print u'img错误数量', len(imgError)
-        for img_url in imgError[:]:
-            imgError.remove(img_url)
-            step_4(img_url)
-    print u'结束img_url'
+    global imgError
+    print u'img错误数量', len(imgError)
+    for img_url in imgError[:]:
+        imgError.remove(img_url)
+        step_4(img_url, cate_index)
+    if TRY_TIMES > 3 and (indexError or suiteError or imgError):  # 尝试3次错误处理
+        step_5(headers, cate_index)
 
 
-def workflow(cate_index):
+def worker(cate_index):
     start_time = datetime.datetime.now()
     print u'开始时间', start_time
     step_1(cate_index)
@@ -241,5 +253,8 @@ def workflow(cate_index):
 
 
 if __name__ == '__main__':
-    workflow(0)
-    # step_3('09411$05551.html',Headers)
+    p = Pool()
+    for i in range(len(CATE_NAME)):
+        p.apply_async(worker, args=(i,))
+    p.close()
+    p.join()
