@@ -254,7 +254,7 @@ def worker(cate_index):
     for t in myPool:
         t.join()
     HEADERS['Referer'] = REFERER[cate_index]
-    step_5(HEADERS)
+    step_5(HEADERS, cate_index)
     end_time = datetime.datetime.now()
     print u'结束时间', end_time, u'耗时', end_time - start_time
 
