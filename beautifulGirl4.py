@@ -165,10 +165,9 @@ def step_3(suite_url, headers, cate_index):
                 print 'suite_end', ('message', e.message)
             else:
                 img_urls = []
-                urls = urls.split(';')
-                for i in range(1, len(urls) - 1):
-                    img_url = {'url': re.split(r'=|"', urls[i])[-2].replace('/big/', '/pic/'), 'title': title}
-                    img_urls.append(img_url)
+                pattern = re.compile('arrayImg\[\d+\]="([^;]+)";')
+                url_list = re.findall(pattern, urls)
+                img_urls.extend(url_list)
                 global suite_count_down
                 suite_count_down += 1
                 for img_url in img_urls:
@@ -260,8 +259,9 @@ def worker(cate_index):
 
 
 if __name__ == '__main__':
-    p = Pool()
-    for i in range(len(CATE_NAME)):
-        p.apply_async(worker, args=(i,))
-    p.close()
-    p.join()
+    # p = Pool()
+    # for i in range(len(CATE_NAME)):
+    #     p.apply_async(worker, args=(i,))
+    # p.close()
+    # p.join()
+    worker(0)
