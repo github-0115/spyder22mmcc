@@ -165,7 +165,7 @@ def step_3(suite_url, headers, cate_index):
                 print 'suite_end', ('message', e.message)
             else:
                 img_urls = []
-                pattern = re.compile('arrayImg\[\d+\]="([^;]+)";')
+                pattern = re.compile('arrayImg\[\d+\]="(.+?)";')
                 url_list = re.findall(pattern, urls)
                 img_urls.extend(url_list)
                 global suite_count_down
