@@ -1,5 +1,5 @@
 # spyder22mmcc
-第一个爬虫，爬22mm.cc上的各种美女图片
+第一个爬虫，爬22mm.cc上的图片(网站改版了，不能正常爬取了)
 ====================================
     使用urllib,urllib2,beautifulsoup,threading, multiprocessing
 ### 分析网站：
